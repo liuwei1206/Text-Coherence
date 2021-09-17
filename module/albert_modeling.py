@@ -11,6 +11,10 @@ import torch
 from packaging import version
 from torch import nn
 
+from transformers.modeling_outputs import (
+    BaseModelOutput,
+    BaseModelOutputWithPooling,
+)
 from transformers.modeling_utils import (
     PreTrainedModel,
     apply_chunking_to_forward,
@@ -521,13 +525,7 @@ class AlbertModel(AlbertPreTrainedModel):
             inner_group_idx = int(layer - group_idx * self.config.inner_group_num)
             self.encoder.albert_layer_groups[group_idx].albert_layers[inner_group_idx].attention.prune_heads(heads)
 
-    @add_start_docstrings_to_model_forward(ALBERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @add_code_sample_docstrings(
-        tokenizer_class=_TOKENIZER_FOR_DOC,
-        checkpoint=_CHECKPOINT_FOR_DOC,
-        output_type=BaseModelOutputWithPooling,
-        config_class=_CONFIG_FOR_DOC,
-    )
+
     def forward(
         self,
         input_ids=None,

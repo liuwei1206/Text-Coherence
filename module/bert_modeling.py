@@ -13,6 +13,17 @@ import torch
 import torch.utils.checkpoint
 from torch import nn
 
+from transformers.modeling_outputs import (
+    BaseModelOutputWithPastAndCrossAttentions,
+    BaseModelOutputWithPoolingAndCrossAttentions,
+)
+from transformers.modeling_utils import (
+    PreTrainedModel,
+    apply_chunking_to_forward,
+    find_pruneable_heads_and_indices,
+    prune_linear_layer,
+)
+
 from transformers.activations import gelu, gelu_new, ACT2FN
 from transformers.configuration_bert import BertConfig
 
