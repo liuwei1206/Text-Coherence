@@ -779,10 +779,12 @@ class XLNetModel(XLNetPreTrainedModel):
 
                 If not set, each token attends to all the others (full bidirectional attention). Only used during
                 pretraining (to define factorization order) or for sequential decoding (generation).
+                仅仅在预训练阶段使用
             target_mapping (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, num_predict, sequence_length)`, `optional`):
                 Mask to indicate the output tokens to use. If ``target_mapping[k, i, j] = 1``, the i-th predict in batch k
                 is on the j-th token. Only used during pretraining for partial prediction or for sequential decoding
                 (generation).
+                仅仅在预训练阶段使用
             token_type_ids (:obj:`torch.LongTensor` of shape :obj:`({0})`, `optional`):
                 Segment token indices to indicate first and second portions of the inputs. Indices are selected in ``[0,
                 1]``:
@@ -801,6 +803,9 @@ class XLNetModel(XLNetPreTrainedModel):
                 - 0 for tokens that are **not masked**.
 
                 You can only uses one of :obj:`input_mask` and :obj:`attention_mask`.
+
+                与attention_mask功能一样，只是与其刚好相反，即这里0表示有效的词，1表示无效的词，这个主要是
+                为了和原始代码统一
             head_mask (:obj:`torch.FloatTensor` of shape :obj:`(num_heads,)` or :obj:`(num_layers, num_heads)`, `optional`):
                 Mask to nullify selected heads of the self-attention modules. Mask values selected in ``[0, 1]``:
 
@@ -819,6 +824,37 @@ class XLNetModel(XLNetPreTrainedModel):
                 more detail.
             return_dict (:obj:`bool`, `optional`):
                 Whether or not to return a :class:`~transformers.file_utils.ModelOutput` instead of a plain tuple.
+
+        Examples::
+
+            >>> from transformers import XLNetTokenizer, XLNetLMHeadModel
+            >>> import torch
+
+            >>> tokenizer = XLNetTokenizer.from_pretrained('xlnet-large-cased')
+            >>> model = XLNetLMHeadModel.from_pretrained('xlnet-large-cased')
+
+            >>> # We show how to setup inputs to predict a next token using a bi-directional context.
+            >>> input_ids = torch.tensor(tokenizer.encode("Hello, my dog is very <mask>", add_special_tokens=False)).unsqueeze(0)  # We will predict the masked token
+            >>> perm_mask = torch.zeros((1, input_ids.shape[1], input_ids.shape[1]), dtype=torch.float)
+            >>> perm_mask[:, :, -1] = 1.0  # Previous tokens don't see last token
+            >>> target_mapping = torch.zeros((1, 1, input_ids.shape[1]), dtype=torch.float)  # Shape [1, 1, seq_length] => let's predict one token
+            >>> target_mapping[0, 0, -1] = 1.0  # Our first (and only) prediction will be the last token of the sequence (the masked token)
+
+            >>> outputs = model(input_ids, perm_mask=perm_mask, target_mapping=target_mapping)
+            >>> next_token_logits = outputs[0]  # Output has shape [target_mapping.size(0), target_mapping.size(1), config.vocab_size]
+
+            >>> # The same way can the XLNetLMHeadModel be used to be trained by standard auto-regressive language modeling.
+            >>> input_ids = torch.tensor(tokenizer.encode("Hello, my dog is very <mask>", add_special_tokens=False)).unsqueeze(0)  # We will predict the masked token
+            >>> labels = torch.tensor(tokenizer.encode("cute", add_special_tokens=False)).unsqueeze(0)
+            >>> assert labels.shape[0] == 1, 'only one word will be predicted'
+            >>> perm_mask = torch.zeros((1, input_ids.shape[1], input_ids.shape[1]), dtype=torch.float)
+            >>> perm_mask[:, :, -1] = 1.0  # Previous tokens don't see last token as is done in standard auto-regressive lm training
+            >>> target_mapping = torch.zeros((1, 1, input_ids.shape[1]), dtype=torch.float)  # Shape [1, 1, seq_length] => let's predict one token
+            >>> target_mapping[0, 0, -1] = 1.0  # Our first (and only) prediction will be the last token of the sequence (the masked token)
+
+            >>> outputs = model(input_ids, perm_mask=perm_mask, target_mapping=target_mapping, labels=labels)
+            >>> loss = outputs.loss
+            >>> next_token_logits = outputs.logits  # Logits have shape [target_mapping.size(0), target_mapping.size(1), config.vocab_size]
         """
 
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
