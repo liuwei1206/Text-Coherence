@@ -160,20 +160,20 @@ class PretrainedForTextClassification(PreTrainedModel):
                 token_type_ids=doc_para_segment_ids
             )
 
-            sequence_outputs = outputs[0] # [N, PM * PL, D]
+            sequence_outputs = outputs[0] # [N, PN * PL, D]
             sequence_outputs = sequence_outputs.view(
                 batch_size, para_num, para_len, -1
-            ) # [N, PM, PL, D]
+            ) # [N, PN, PL, D]
 
             ## 2. pooling to get paragraph representation
             # we need to pooling to get the representation of each paragraph
-            # convert [N, PM * PL, D] -> [N, PM, D]
+            # convert [N, PN * PL, D] -> [N, PN, D]
             if self.para_pooling_type == "CLS":
                 # [CLS] token is always at position 0
                 para_outputs = torch.index_select(
                     sequence_outputs, dim=2, index=torch.tensor([0])
                 )
-                para_outputs = para_outputs.squeeze() # [N, PM, D]
+                para_outputs = para_outputs.squeeze() # [N, PN, D]
 
             elif self.para_pooling_type.upper() == "AVERAGE":
                 para_attention_mask = para_attention_mask.view(
@@ -186,7 +186,7 @@ class PretrainedForTextClassification(PreTrainedModel):
                 sequence_length = torch.where(
                     sequence_length < 1.0, 1.0, sequence_length
                 )
-                para_outputs = masked_sequence_outputs / sequence_length # [N, PM, D]
+                para_outputs = masked_sequence_outputs / sequence_length # [N, PN, D]
             elif self.para_pooling_type.upper() == "MAX":
                 para_attention_mask = para_attention_mask.view(
                     batch_size, para_num, para_len
@@ -196,14 +196,14 @@ class PretrainedForTextClassification(PreTrainedModel):
                 mask_values = (1 - para_attention_mask.float()) * (-10000.0)
                 masked_sequence_outputs = sequence_outputs + mask_values
                 masked_sequence_outputs = masked_sequence_outputs.view(
-                    batch_size * para_num, para_len, -1) # [N * PM, PL, D]
+                    batch_size * para_num, para_len, -1) # [N * PN, PL, D]
                 masked_sequence_outputs = torch.permute(
-                    masked_sequence_outputs, [0, 2, 1]) # [N * PM, D, PL]
+                    masked_sequence_outputs, [0, 2, 1]) # [N * PN, D, PL]
                 max_pooling = torch.nn.MaxPool1d(kernel_size=para_len)
                 masked_sequence_outputs = max_pooling(
-                    masked_sequence_outputs) # [N * PM, D]
+                    masked_sequence_outputs) # [N * PN, D]
                 para_outputs = masked_sequence_outputs.view(
-                    batch_size, para_num, -1) # [N, PM, D]
+                    batch_size, para_num, -1) # [N, PN, D]
 
             ## 3. paragraph transformer
             para_sequence_outputs = self.para_transformer(
@@ -254,20 +254,20 @@ class PretrainedForTextClassification(PreTrainedModel):
                 token_type_ids=doc_sent_segment_ids
             )
 
-            sequence_outputs = outputs[0]  # [N, PM * PL, D]
+            sequence_outputs = outputs[0]  # [N, SN * SL, D]
             sequence_outputs = sequence_outputs.view(
                 batch_size, sent_num, sent_len, -1
-            )  # [N, PM, PL, D]
+            )  # [N, SN, SL, D]
 
             ## 2. pooling to get sentence representation
             # we need to pooling to get the representation of each sentence
-            # convert [N, PM * PL, D] -> [N, PM, D]
+            # convert [N, SN * SL, D] -> [N, SN, D]
             if self.sent_pooling_type == "CLS":
                 # [CLS] token is always at position 0
                 sent_outputs = torch.index_select(
                     sequence_outputs, dim=2, index=torch.tensor([0])
                 )
-                sent_outputs = sent_outputs.squeeze()  # [N, PM, D]
+                sent_outputs = sent_outputs.squeeze()  # [N, SN, D]
 
             elif self.sent_pooling_type.upper() == "AVERAGE":
                 sent_attention_mask = sent_attention_mask.view(
@@ -280,7 +280,7 @@ class PretrainedForTextClassification(PreTrainedModel):
                 sequence_length = torch.where(
                     sequence_length < 1.0, 1.0, sequence_length
                 )
-                sent_outputs = masked_sequence_outputs / sequence_length  # [N, PM, D]
+                sent_outputs = masked_sequence_outputs / sequence_length  # [N, SN, D]
             elif self.sent_pooling_type.upper() == "MAX":
                 sent_attention_mask = sent_attention_mask.view(
                     batch_size, sent_num, sent_len
@@ -290,14 +290,14 @@ class PretrainedForTextClassification(PreTrainedModel):
                 mask_values = (1 - sent_attention_mask.float()) * (-10000.0)
                 masked_sequence_outputs = sequence_outputs + mask_values
                 masked_sequence_outputs = masked_sequence_outputs.view(
-                    batch_size * sent_num, sent_len, -1)  # [N * PM, PL, D]
+                    batch_size * sent_num, sent_len, -1)  # [N * SN, SL, D]
                 masked_sequence_outputs = torch.permute(
-                    masked_sequence_outputs, [0, 2, 1])  # [N * PM, D, PL]
+                    masked_sequence_outputs, [0, 2, 1])  # [N * SN, D, SL]
                 max_pooling = torch.nn.MaxPool1d(kernel_size=sent_len)
                 masked_sequence_outputs = max_pooling(
-                    masked_sequence_outputs)  # [N * PM, D]
+                    masked_sequence_outputs)  # [N * SN, D]
                 sent_outputs = masked_sequence_outputs.view(
-                    batch_size, sent_num, -1)  # [N, PM, D]
+                    batch_size, sent_num, -1)  # [N, SN, D]
 
             ## 3. sentence transformer
             sent_sequence_outputs = self.sent_transformer(
@@ -321,14 +321,14 @@ class PretrainedForTextClassification(PreTrainedModel):
                 ).squeeze()  # [N, D]
                 doc_outputs = masked_sent_sequence_outputs / sent_length  # [N, D]
             elif self.doc_pooling_type.upper() == "ATTENTION":
-                alpha = self.sent_attn_W1(sent_sequence_outputs)  # [N, PN, D]
+                alpha = self.sent_attn_W1(sent_sequence_outputs)  # [N, SN, D]
                 alpha = nn.Tanh()(alpha)
-                alpha = torch.matmul(alpha, self.sent_attn_w2)  # [N, PN, D]
-                alpha = torch.sum(alpha, dim=2).squeeze()  # [N, PN]
+                alpha = torch.matmul(alpha, self.sent_attn_w2)  # [N, SN, D]
+                alpha = torch.sum(alpha, dim=2).squeeze()  # [N, SN]
                 zero_mask = (1 - doc_sent_attention_mask.float()) * (-10000.0)
                 alpha = alpha + zero_mask
-                alpha = torch.nn.Softmax(dim=-1)(alpha)  # [N, PN]
-                alpha = alpha.unsqueeze(-1)  # [N, PN, 1]
+                alpha = torch.nn.Softmax(dim=-1)(alpha)  # [N, SN]
+                alpha = alpha.unsqueeze(-1)  # [N, SN, 1]
                 doc_outputs = torch.sum(
                     sent_sequence_outputs * alpha, dim=1
                 )  # [N, D]
