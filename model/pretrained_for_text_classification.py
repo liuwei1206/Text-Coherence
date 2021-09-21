@@ -6,6 +6,7 @@ import python
 
 import torch
 import torch.nn as nn
+from torch.nn import CrossEntropyLoss
 
 from module.bert_modeling import BertModel
 from module.roberta_modeling import RobertaModel
@@ -61,6 +62,12 @@ class PretrainedForTextClassification(PreTrainedModel):
                 nhead=params.sent_nhead,
                 num_layers=params.sent_num_layers
             )
+
+            if self.sent_pooling_type.upper() == "ATTENTION":
+                self.sent_attn_W1 = nn.Linear(config.hidden_size, config.hidden_size)
+                self.sent_attn_w2 = nn.Parameter(torch.zeros(config.hidden_size))
+
+
 
         self.dropout = nn.Dropout(config.HP_dropout)
         self.num_labels = params.num_labels
@@ -174,7 +181,7 @@ class PretrainedForTextClassification(PreTrainedModel):
                 )
                 para_attention_mask = para_attention_mask.unsqueeze(-1)
                 masked_sequence_outputs = sequence_outputs * para_attention_mask.float()
-                masked_sequence_outputs = torch.sum(masked_sequence_outputs, dim=2)
+                masked_sequence_outputs = torch.sum(masked_sequence_outputs, dim=2).squeeze()
                 sequence_length = torch.sum(para_attention_mask, dim=2)
                 sequence_length = torch.where(
                     sequence_length < 1.0, 1.0, sequence_length
@@ -217,7 +224,7 @@ class PretrainedForTextClassification(PreTrainedModel):
                 masked_para_sequence_outputs = para_sequence_outputs * doc_para_attention_mask
                 masked_para_sequence_outputs = torch.sum(
                     masked_para_sequence_outputs, dim=1
-                ) # [N, D]
+                ).squeeze() # [N, D]
                 doc_outputs = masked_para_sequence_outputs / para_length # [N, D]
             elif self.doc_pooling_type.upper() == "ATTENTION":
                 alpha = self.para_attn_W1(para_sequence_outputs) # [N, PN, D]
@@ -233,7 +240,110 @@ class PretrainedForTextClassification(PreTrainedModel):
                     para_sequence_outputs * alpha, dim=1
                 ) # [N, D]
         elif mode.upper() == "DOCUMENT-SENTENCE":
-            pass
+            ## 1. for sentence encoder
+            # [N, PM, PL]
+            batch_size = doc_sent_token_ids.size(0)
+            sent_num = doc_sent_token_ids.size(1)
+            sent_len = doc_sent_token_ids.size(2)
+            doc_sent_token_ids = doc_sent_token_ids.view(batch_size, -1)
+            doc_sent_segment_ids = doc_sent_segment_ids.view(batch_size, -1)
+            sent_attention_mask = sent_attention_mask.view(batch_size, -1)
+            outputs = self.text_encoder(
+                input_ids=doc_sent_token_ids,
+                attention_mask=sent_attention_mask,
+                token_type_ids=doc_sent_segment_ids
+            )
+
+            sequence_outputs = outputs[0]  # [N, PM * PL, D]
+            sequence_outputs = sequence_outputs.view(
+                batch_size, sent_num, sent_len, -1
+            )  # [N, PM, PL, D]
+
+            ## 2. pooling to get sentence representation
+            # we need to pooling to get the representation of each sentence
+            # convert [N, PM * PL, D] -> [N, PM, D]
+            if self.sent_pooling_type == "CLS":
+                # [CLS] token is always at position 0
+                sent_outputs = torch.index_select(
+                    sequence_outputs, dim=2, index=torch.tensor([0])
+                )
+                sent_outputs = sent_outputs.squeeze()  # [N, PM, D]
+
+            elif self.sent_pooling_type.upper() == "AVERAGE":
+                sent_attention_mask = sent_attention_mask.view(
+                    batch_size, sent_num, sent_len
+                )
+                sent_attention_mask = sent_attention_mask.unsqueeze(-1)
+                masked_sequence_outputs = sequence_outputs * sent_attention_mask.float()
+                masked_sequence_outputs = torch.sum(masked_sequence_outputs, dim=2).squeeze()
+                sequence_length = torch.sum(sent_attention_mask, dim=2)
+                sequence_length = torch.where(
+                    sequence_length < 1.0, 1.0, sequence_length
+                )
+                sent_outputs = masked_sequence_outputs / sequence_length  # [N, PM, D]
+            elif self.sent_pooling_type.upper() == "MAX":
+                sent_attention_mask = sent_attention_mask.view(
+                    batch_size, sent_num, sent_len
+                )
+                sent_attention_mask = sent_attention_mask.unsqueeze(-1)
+                sent_attention_mask = sent_attention_mask.expand_as(sequence_outputs)
+                mask_values = (1 - sent_attention_mask.float()) * (-10000.0)
+                masked_sequence_outputs = sequence_outputs + mask_values
+                masked_sequence_outputs = masked_sequence_outputs.view(
+                    batch_size * sent_num, sent_len, -1)  # [N * PM, PL, D]
+                masked_sequence_outputs = torch.permute(
+                    masked_sequence_outputs, [0, 2, 1])  # [N * PM, D, PL]
+                max_pooling = torch.nn.MaxPool1d(kernel_size=sent_len)
+                masked_sequence_outputs = max_pooling(
+                    masked_sequence_outputs)  # [N * PM, D]
+                sent_outputs = masked_sequence_outputs.view(
+                    batch_size, sent_num, -1)  # [N, PM, D]
+
+            ## 3. sentence transformer
+            sent_sequence_outputs = self.sent_transformer(
+                src=sent_outputs, mask=doc_sent_attention_mask
+            )
+
+            if self.doc_pooling_type.upper() == "CLS":
+                # in this strategy, simply pick the first one
+                doc_outputs = torch.index_select(
+                    sent_sequence_outputs, dim=1, index=torch.tensor([0])
+                )
+            elif self.doc_pooling_type.upper() == "AVERAGE":
+                sent_length = torch.sum(doc_sent_attention_mask, dim=1)
+                sent_length = torch.where(
+                    sent_length < 1.0, 1.0, sent_length
+                )
+                doc_sent_attention_mask = doc_sent_attention_mask.unsqueeze(-1)
+                masked_sent_sequence_outputs = sent_sequence_outputs * doc_sent_attention_mask
+                masked_sent_sequence_outputs = torch.sum(
+                    masked_sent_sequence_outputs, dim=1
+                ).squeeze()  # [N, D]
+                doc_outputs = masked_sent_sequence_outputs / sent_length  # [N, D]
+            elif self.doc_pooling_type.upper() == "ATTENTION":
+                alpha = self.sent_attn_W1(sent_sequence_outputs)  # [N, PN, D]
+                alpha = nn.Tanh()(alpha)
+                alpha = torch.matmul(alpha, self.sent_attn_w2)  # [N, PN, D]
+                alpha = torch.sum(alpha, dim=2).squeeze()  # [N, PN]
+                zero_mask = (1 - doc_sent_attention_mask.float()) * (-10000.0)
+                alpha = alpha + zero_mask
+                alpha = torch.nn.Softmax(dim=-1)(alpha)  # [N, PN]
+                alpha = alpha.unsqueeze(-1)  # [N, PN, 1]
+                doc_outputs = torch.sum(
+                    sent_sequence_outputs * alpha, dim=1
+                )  # [N, D]
+
+        # for classification
+        doc_outputs = self.dropout(doc_outputs)
+        logits = self.classifier(doc_outputs)
+        _, preds = torch.max(logits, dim=-1)
+        outputs = (preds,)
+        if flag.upper() == "TRAIN":
+            loss_fct = CrossEntropyLoss(ignore_index=-1)
+            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            outputs = (loss,) + outputs
+
+        return outputs
 
 
 
