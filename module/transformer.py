@@ -5,8 +5,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.modules.transformer import TransformerEncoderLayer, TransformerEncoder
-import torch.nn.TransformerEncoderLayer as TransformerEncoderLayer
-import torch.nn.TransformerEncoder as TransformerEncoder
 import numpy as np
 
 class Transformer(nn.Module):

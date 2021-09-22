@@ -2,11 +2,10 @@
 # date = 2021-09-19
 
 import os
-import python
-
 import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss
+from transformers.modeling_utils import PreTrainedModel
 
 from module.bert_modeling import BertModel
 from module.roberta_modeling import RobertaModel

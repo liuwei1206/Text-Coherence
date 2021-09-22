@@ -30,8 +30,8 @@ from transformers.models.bert.tokenization_bert import BertTokenizer
 from transformers.models.roberta.configuration_roberta import RobertaConfig
 from transformers.models.roberta.tokenization_roberta import RobertaTokenizer
 from transformers.models.albert.configuration_albert import AlbertConfig
-from transformers.models.xlnet.configuration_xlnet import XLNetConfig
-from transformers.models.xlnet.tokenization_xlnet import XLNetTokenizer
+# from transformers.models.xlnet.configuration_xlnet import XLNetConfig
+# from transformers.models.xlnet.tokenization_xlnet import XLNetTokenizer
 from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 
 from args.doc_parser import get_argparse
@@ -410,7 +410,7 @@ def main():
     set_seed(args.seed)
 
     ## 1.prepare data
-    domain = "Yahoo_"
+    domain = "xxx_"
     train_data_file = os.path.join(args.data_dir, domain + "train.json")
     dev_data_file = os.path.join(args.data_dir, domain + "test.json")
     test_data_file = os.path.join(args.data_dir, domain + "test.json")
