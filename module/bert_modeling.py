@@ -8,6 +8,7 @@ import os
 import warnings
 from dataclasses import dataclass
 from typing import Optional, Tuple
+from packaging import version
 
 import torch
 import torch.utils.checkpoint

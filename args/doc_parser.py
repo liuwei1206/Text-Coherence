@@ -16,7 +16,7 @@ def get_argparse():
     parser.add_argument("--model_type", default="Bert", type=str,
                         help="Bert_Token, BertCRF_Token, BertBiLSTMCRF_Token, WCBert_Token, WC....")
     parser.add_argument("--config_name", default="data/pretrained_models/bert/config.json", type=str, help="the config of define model")
-    parser.add_argument("--vocab_file", default="data/pretrained_models/bert/vocab.txt", type=str, help="the vocab file for bert")
+    parser.add_argument("--vocab_file", default="data/pretrained_models/bert", type=str, help="the vocab file for bert")
     parser.add_argument("--label_file", default="data/dataset/gcdc/label.txt", type=str)
     parser.add_argument("--default_label", default='0', type=str)
 
@@ -27,9 +27,9 @@ def get_argparse():
                         help="Whether do evuation during training.")
     parser.add_argument("--max_seq_length", default=48, type=int, help="the max length of input sequence")
     parser.add_argument("--max_doc_length", default=32, type=int, help="the max length of a document")
-    parser.add_argument("--max_para_num", default=8, type=int, help="the max number of paragraphs in a document")
+    parser.add_argument("--max_para_num", default=4, type=int, help="the max number of paragraphs in a document")
     parser.add_argument("--max_para_length", default=16, type=int, help="the max length of a paragraph")
-    parser.add_argument("--max_sent_num", default=8, type=int, help="the max number of sentences in a document")
+    parser.add_argument("--max_sent_num", default=4, type=int, help="the max number of sentences in a document")
     parser.add_argument("--max_sent_length", default=16, type=int, help="the max length of each sentence")
     parser.add_argument("--doc_type", default="Document", type=str, help="document, document-paragraph, document-sentence")
     parser.add_argument("--para_pooling_type", default="CLS", type=str, help="CLS, AVERAGE, MAX")

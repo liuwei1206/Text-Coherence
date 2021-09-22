@@ -44,7 +44,7 @@ from function.metrics import accuracy_score
 from function.writer import save_preds_for_text_classification
 
 try:
-    from torch.utils.tensorboard import SummaryWriter
+    from torch.utils.tensorboard.writer import SummaryWriter
 except ImportError:
     try:
         from tensorboardX import SummaryWriter
@@ -91,7 +91,7 @@ def get_dataloader(dataset, args, mode='train'):
         data_loader = DataLoader(
             dataset=dataset,
             batch_size=args.per_gpu_train_batch_size,
-            shuffle=True,
+            shuffle=False, # Randomsampler already contains shuffle
             num_workers=0,
             pin_memory=True,
             sampler=sampler
@@ -202,8 +202,6 @@ def train(model, args, train_dataset, dev_dataset, test_dataset, tb_writer, mode
             torch.load(os.path.join(model_path, "optimizer.pt"), map_location=args.device)
         )
         scheduler.load_state_dict(torch.load(os.path.join(model_path, "scheduler.pt")))
-
-    model = model.cuda()
 
     ## 3.begin train
     total_train_batch_size = args.per_gpu_train_batch_size * args.gradient_accumulation_steps
@@ -352,7 +350,7 @@ def evaluate(model, args, dataset, global_step, description="dev", write_file=Fa
     all_attention_mask = None
 
     # for batch in tqdm(dataloader, desc=description):
-    pbar = ProcessBar(n_total=len(dataloader), desc="Evaluation")
+    pbar = ProgressBar(n_total=len(dataloader), desc="Evaluation")
     for step, batch in enumerate(dataloader):
         batch = tuple(t.to(args.device) for t in batch)
         inputs = {"doc_token_ids": batch[0], "doc_segment_ids": batch[1],
@@ -390,9 +388,9 @@ def evaluate(model, args, dataset, global_step, description="dev", write_file=Fa
     if write_file:
         file_path = os.path.join(args.output_dir, "{}-{}-{}.txt".format(args.model_type, description, str(global_step)))
         tokenizer = BertTokenizer.from_pretrained(args.vocab_file)
-        save_preds_for_text_classification(all_input_ids, attention_mask, tokenizer, all_true_labels, all_pred_labels, file_path)
+        save_preds_for_text_classification(all_input_ids, attention_mask, tokenizer, all_label_ids, all_predict_ids, file_path)
 
-    return metrics, (all_true_labels, all_pred_labels)
+    return metrics, (all_label_ids, all_predict_ids)
 
 def main():
     args = get_argparse().parse_args()
@@ -431,9 +429,17 @@ def main():
     params = {}
     params['model_type'] = args.model_type
     params['doc_type'] = args.doc_type
-    params['para_pooling_type'] = "CLS"
-    params['sent_pooling_type'] = 'CLS'
-    params['doc_pooling_type'] = 'CLS'
+    params['para_pooling_type'] = args.para_pooling_type
+    params['para_d_model'] = config.hidden_size
+    params['para_nhead'] = config.num_attention_heads
+    params['para_num_layers'] = 2
+    params['sent_pooling_type'] = args.sent_pooling_type
+    params['para_d_model'] = config.hidden_size
+    params['para_nhead'] = config.num_attention_heads
+    params['sent_num_layers'] = 2
+    params['doc_pooling_type'] = args.doc_pooling_type
+    params['num_labels'] = 3
+
     model = PretrainedForTextClassification(
         config=config,
         params=params
@@ -452,15 +458,15 @@ def main():
     }
 
     if args.do_train:
-        train_dataset = TaskDataset(train_data_file, params=dataset_params)
-        dev_dataset = TaskDataset(dev_data_file, params=dataset_params)
-        test_dataset = TaskDataset(test_data_file, params=dataset_params)
+        train_dataset = GCDCDataset(train_data_file, params=dataset_params)
+        dev_dataset = GCDCDataset(dev_data_file, params=dataset_params)
+        test_dataset = GCDCDataset(test_data_file, params=dataset_params)
         args.model_name_or_path = None
         train(model, args, train_dataset, dev_dataset, test_dataset, tb_writer)
 
     if args.do_eval:
         logger.info("*** Dev Evaluate ***")
-        dev_dataset = TaskDataset(dev_data_file, params=dataset_params)
+        dev_dataset = GCDCDataset(dev_data_file, params=dataset_params)
         global_steps = args.model_name_or_path.split("/")[-2].split("-")[-1]
         eval_output, _ = evaluate(model, args, dev_dataset, global_steps, "dev", write_file=True)
         eval_output["global_steps"] = global_steps
@@ -470,7 +476,7 @@ def main():
     # return eval_output
     if args.do_predict:
         logger.info("*** Test Evaluate ***")
-        test_dataset = TaskDataset(test_data_file, params=dataset_params, do_shuffle=False)
+        test_dataset = GCDCDataset(test_data_file, params=dataset_params, do_shuffle=False)
         global_steps = args.model_name_or_path.split("/")[-2].split("-")[-1]
         eval_output, _ = evaluate(model, args, test_dataset, global_steps, "test", write_file=True)
         eval_output["global_steps"] = global_steps

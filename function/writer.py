@@ -46,7 +46,7 @@ def save_preds_for_text_classification(token_ids, attention_mask, tokenizer, tru
             if t_label == p_label:
                 f.write("%s\t%s\t%s\t%s\n"%("  ", t_label, p_label, text))
             else:
-                f.write("%d\t%s\t%s\t%s\t%d\n"%(error_num, t_label, p_label, text))
+                f.write("%d\t%s\t%s\t%s\n"%(error_num, t_label, p_label, text))
                 error_num += 1
 
             f.write("\n")

@@ -63,6 +63,7 @@ class GCDCDataset(Dataset):
                 self.doc_sent_segment_ids = dataset['doc_sent_segment_ids']
                 self.doc_sent_attention_mask = dataset['doc_sent_attention_mask']
                 self.sent_attention_mask = dataset['sent_attention_mask']
+                self.labels = dataset['labels']
 
                 if print_flag:
                     print("Document instance: ")
@@ -90,6 +91,8 @@ class GCDCDataset(Dataset):
             all_doc_sent_attention_mask = []
             all_sent_attention_mask = []
 
+            all_labels = []
+
             with open(self.file, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
                 for line in lines:
@@ -114,7 +117,7 @@ class GCDCDataset(Dataset):
                             document_text_tokens = document_text_tokens[:self.max_doc_length-2]
                         document_text_tokens.insert(0, '[CLS]')
                         document_text_tokens.append('[SEP]')
-                        document_token_ids = self.tokenizer.convert_tokens_to_ids(document_text)
+                        document_token_ids = self.tokenizer.convert_tokens_to_ids(document_text_tokens)
 
                         # tokenize for paragraphs
                         document_para_tokens = []
@@ -151,19 +154,19 @@ class GCDCDataset(Dataset):
 
                         ## to numpy matrix
                         # document
-                        document_token_ids_np = np.zeros(self.max_doc_length)
-                        document_segment_ids_np = np.ones(self.max_doc_length)
-                        document_attention_mask_np = np.zeros(self.max_doc_length)
+                        document_token_ids_np = np.zeros(self.max_doc_length, dtype=np.int)
+                        document_segment_ids_np = np.ones(self.max_doc_length, dtype=np.int)
+                        document_attention_mask_np = np.zeros(self.max_doc_length, dtype=np.int)
 
                         document_token_ids_np[:len(document_token_ids)] = document_token_ids
                         document_segment_ids_np[:len(document_token_ids)] = 0
                         document_attention_mask_np[:len(document_token_ids)] = 1
 
                         # document-paragraph
-                        document_para_token_ids_np = np.zeros(self.max_para_num, self.max_para_length)
-                        document_para_segment_ids_np = np.ones(self.max_para_num, self.max_para_length)
-                        document_para_attention_mask_np = np.zeros(self.max_para_num)
-                        para_attention_mask_np = np.zeros(self.max_para_num, self.max_para_length)
+                        document_para_token_ids_np = np.zeros((self.max_para_num, self.max_para_length), dtype=np.int)
+                        document_para_segment_ids_np = np.ones((self.max_para_num, self.max_para_length), dtype=np.int)
+                        document_para_attention_mask_np = np.zeros(self.max_para_num, dtype=np.int)
+                        para_attention_mask_np = np.zeros((self.max_para_num, self.max_para_length), dtype=np.int)
 
                         tmp_para_num = len(document_para_token_ids)
                         for idx in range(tmp_para_num):
@@ -173,10 +176,10 @@ class GCDCDataset(Dataset):
                             para_attention_mask_np[idx][:len(document_para_token_ids[idx])] = 1
 
                         # document-sentence
-                        document_sent_token_ids_np = np.zeros(self.max_sent_num, self.max_sent_length)
-                        document_sent_segment_ids_np = np.ones(self.max_sent_num, self.max_sent_length)
-                        document_sent_attention_mask_np = np.zeros(self.max_sent_num)
-                        sent_attention_mask_np = np.zeros(self.max_sent_num, self.max_sent_length)
+                        document_sent_token_ids_np = np.zeros((self.max_sent_num, self.max_sent_length), dtype=np.int)
+                        document_sent_segment_ids_np = np.ones((self.max_sent_num, self.max_sent_length), dtype=np.int)
+                        document_sent_attention_mask_np = np.zeros((self.max_sent_num), dtype=np.int)
+                        sent_attention_mask_np = np.zeros((self.max_sent_num, self.max_sent_length), dtype=np.int)
 
                         tmp_sent_num = len(document_sent_token_ids)
                         for idx in range(tmp_sent_num):
@@ -186,7 +189,7 @@ class GCDCDataset(Dataset):
                             sent_attention_mask_np[idx][:len(document_sent_token_ids[idx])] = 1
 
                         # for label
-                        label_id = int(label)
+                        label_id = int(label) - 1 # convert 1, 2, 3 into 0, 1, 2
 
                         if print_flag:
                             print("Document instance: ")
@@ -210,6 +213,7 @@ class GCDCDataset(Dataset):
                         all_doc_sent_segment_ids.append(document_sent_segment_ids_np)
                         all_doc_sent_attention_mask.append(document_sent_attention_mask_np)
                         all_sent_attention_mask.append(sent_attention_mask_np)
+                        all_labels.append(label_id)
 
             assert len(all_doc_token_ids) == len(all_doc_segment_ids), (len(all_doc_token_ids), len(all_doc_segment_ids))
             assert len(all_doc_token_ids) == len(all_doc_attention_mask), (len(all_doc_token_ids), len(all_doc_attention_mask))
@@ -221,6 +225,7 @@ class GCDCDataset(Dataset):
             assert len(all_doc_token_ids) == len(all_doc_sent_segment_ids), (len(all_doc_token_ids), len(all_doc_segment_ids))
             assert len(all_doc_token_ids) == len(all_doc_sent_attention_mask), (len(all_doc_token_ids), len(all_doc_sent_attention_mask))
             assert len(all_doc_token_ids) == len(all_sent_attention_mask), (len(all_doc_token_ids), len(all_sent_attention_mask))
+            assert len(all_doc_token_ids) == len(all_labels), (len(all_doc_token_ids), len(all_labels))
 
             all_doc_token_ids = np.array(all_doc_token_ids)
             all_doc_segment_ids = np.array(all_doc_segment_ids)
@@ -233,6 +238,7 @@ class GCDCDataset(Dataset):
             all_doc_sent_segment_ids = np.array(all_doc_sent_segment_ids)
             all_doc_sent_attention_mask = np.array(all_doc_sent_attention_mask)
             all_sent_attention_mask = np.array(all_sent_attention_mask)
+            all_labels = np.array(all_labels)
 
             np.savez(
                 self.saved_np_file,
@@ -246,7 +252,8 @@ class GCDCDataset(Dataset):
                 doc_sent_token_ids=all_doc_sent_token_ids,
                 doc_sent_segment_ids=all_doc_sent_segment_ids,
                 doc_sent_attention_mask=all_doc_sent_attention_mask,
-                sent_attention_mask=all_sent_attention_mask
+                sent_attention_mask=all_sent_attention_mask,
+                labels=all_labels
             )
 
             # init dataset
@@ -261,6 +268,7 @@ class GCDCDataset(Dataset):
             self.doc_sent_segment_ids = all_doc_sent_segment_ids
             self.doc_sent_attention_mask = all_doc_sent_attention_mask
             self.sent_attention_mask = all_sent_attention_mask
+            self.labels = all_labels
 
         self.total_size = len(self.doc_token_ids)
 
@@ -284,5 +292,6 @@ class GCDCDataset(Dataset):
             torch.tensor(self.doc_sent_token_ids[index]),
             torch.tensor(self.doc_sent_segment_ids[index]),
             torch.tensor(self.doc_sent_attention_mask[index]),
-            torch.tensor(self.sent_attention_mask[index])
+            torch.tensor(self.sent_attention_mask[index]),
+            torch.tensor(self.labels[index])
         )
